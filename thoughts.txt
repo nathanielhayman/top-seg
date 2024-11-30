@@ -1,0 +1,43 @@
+- Threshold data with value which maximizes coverage while minimizing noise
+- Isolate a generous portion of the head scan which could contain the CoW
+- Find the largest connected component which contains the voxels representing
+  the CoW
+    - accept multiple largest connected components if their total volumes are
+      relatively minimal
+- Find medial axis
+- Segement medial axis by identifying bifurcation points
+    - segement if the angle of bifurcation is greater than some threshold
+      for the average angle of the feeding artery
+    - if multiple elements satisfy previous condition, accept the path with
+      minimal angle
+- Align medial axis mesh with a reference via ICP (PCA/SVD) alignment
+- Eliminate paths in the medial axis graph which are not represented in the
+  reference medial axis graph
+- Remove voxels which do not satisfy some minimal proximity threshold with the
+  updated medial axis graph
+- Label remaining voxels by the corresponding medial axis path
+- Correct artifacts caused by eliminating intermediate arteries (this is 
+  probably very difficult)
+
+
+
+Revised approach
+
+Prerequisites: an averaged ideal CoW mesh with a corresponding medial axis map
+with labeled segements
+
+- Threshold and align iteratively until a desired level of correspondence or
+  path area is acquired OR prompt for manual threshold selection
+- Isolate a generous portion of the thresholded mesh corresponding to the CoW
+  to speed up further computation
+- Skeletonize mesh, and segment each path by angle deltas at each bifurcation
+- Identify nearest neighbor segemented paths on the overlayed ideal medial axis
+  map, defining sufficient correspondence as a function of distance from the
+  reference and difference between total path lengths
+- Remove all path segements from the target skeleton which do not meet some
+  correspondence threshold
+- Traverse the updated skeleton and identify all voxels on the target mesh
+  which are contained within some radius of the skeleton (this radius could
+  be a function of the position on the skeleton for the reference mesh,
+  interpolated along the paths of the target skeleton)
+- Remove all voxels which were not marked previously
