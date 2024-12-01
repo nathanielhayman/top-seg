@@ -1,144 +1,291 @@
 import pyvista as pv
 
-from skimage import measure
-
 import numpy as np
+
+from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, \
+QSlider, QPushButton, QLabel
+
+from PyQt5.QtCore import Qt
+
+import pyvistaqt as pvqt
+
+from vtkmodules.vtkCommonDataModel import vtkIterativeClosestPointTransform
+
+import vtk
 
 FILENAME = "./data/topcow_mr_002_0000.nii.gz"
 
-REF_FILENAME = "./data/topcow_mr_002.nii.gz"
+REF_FILENAME = "./data/topcow_mr_001.nii.gz"
 
 PLOT_BOX = False
 
 CONTOUR = False
 
-reader = pv.get_reader(REF_FILENAME)
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
 
-mesh = reader.read()
+        # Initialize Qt window
 
-reference = mesh.threshold(1)
+        self.setWindowTitle("Visualization")
+        self.setGeometry(100, 100, 100, 100)
 
-reader = pv.get_reader(FILENAME)
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
 
-mesh = reader.read()
+        layout = QVBoxLayout()
+        central_widget.setLayout(layout)
 
-# REMOVE
-# source = mesh.threshold(1)
 
-# contoured = None
+        # Read reference mesh
 
-# if source is not None:
-#     contoured = source.contour()
+        reader = pv.get_reader(REF_FILENAME)
+        mesh = reader.read()
 
-# conn = mesh.connectivity('specified', (0,1,2))
+        self.ref_mesh = mesh.threshold(1)
 
-ref_bounds = None
+        # Read target mesh
 
-# sourcez = None
+        reader = pv.get_reader(FILENAME)
+        self.tgt_mesh = reader.read()
 
-if reference is not None:
-    ref_bounds = reference.bounds
+        self.alpha_mesh = reader.read()
 
-print(ref_bounds)
+        # REMOVE
+        # source = mesh.threshold(1)
 
-# -2.1e4
-source = mesh.threshold(-2.3e4, progress_bar=True)
+        # contoured = None
 
-if source is None:
-    exit("Source could not be thresholded")
+        # if source is not None:
+        #     contoured = source.contour()
 
-source = source.clip_box(ref_bounds, invert=False, progress_bar=True)
+        # conn = mesh.connectivity('specified', (0,1,2))
 
-if source is None:
-    exit("Source could not be bound")
+        self.ref_bounds = None
 
-source = source.connectivity('largest', progress_bar=True)
+        # sourcez = None
 
-if source is None:
-    exit("Largest connectivity extraction failed")
+        if self.ref_mesh is not None:
+            self.ref_bounds = self.ref_mesh.bounds
 
-resolution = (1000, 1000, 1000)
+        # -2.1e4
+        self.threshold(-2.3e4)
 
-print(resolution)
+        # resolution = (1000, 1000, 1000)
 
-print((resolution[0] + 1, resolution[1] + 1,
-                                   resolution[2] + 1))
+        # print(resolution)
 
-print((resolution[0] + 1, resolution[1] + 1,
-                                   resolution[2] + 1))
+        # print((resolution[0] + 1, resolution[1] + 1,
+        #                                 resolution[2] + 1))
 
-bounds = source.bounds
+        # print((resolution[0] + 1, resolution[1] + 1,
+        #                                 resolution[2] + 1))
 
-# sk_grid = pv.ImageData()
+        # if reference is None:
+        #     exit("Could not construct reference mesh")
 
-# sk_grid.origin = (bounds[0], bounds[1], bounds[2])
+        #     vtk.vtkUnstructuredGridTo
 
-# sk_grid.spacing = (
-#     abs(bounds[0]-bounds[1]) / resolution[0],
-#     abs(bounds[2]-bounds[3]) / resolution[1],
-#     abs(bounds[4]-bounds[5]) / resolution[2]
-# )
+        # geo_filter = vtk.vtkGeometryFilter()
+        # geo_filter.SetInputData(source)
+        # geo_filter.Update()
 
-# sk_grid.dimensions = resolution[0] + 1, resolution[1] + 1, resolution[2] + 1
+        # poly_data = geo_filter.GetOutput()
 
-# sampled = sk_grid.sample(source)
+        # writer = vtk.vtkXMLPolyDataWriter()
+        # writer.SetFileName("artery.vtp")
+        # writer.SetInputData(poly_data)
+        # writer.Write()
 
-print(source.points)
+        # myPype= pypes.PypeRun("vmtknetworkextraction -ifile ArteryObjAN129–10.vtp -advancementratio 1 -ofile centerlines/ArteryObjAN129–10.vtp")
 
-# volume = np.array(source.points)
+        # icp = vtkIterativeClosestPointTransform()
+        # icp.SetSource(source)
+        # icp.SetTarget(reference)
+        # icp.GetLandmarkTransform().SetModeToRigidBody()
+        # icp.SetMaximumNumberOfLandmarks(100)
+        # icp.SetMaximumMeanDistance(.00001)
+        # icp.SetMaximumNumberOfIterations(500)
+        # icp.CheckMeanDistanceOn()
+        # icp.StartByMatchingCentroidsOn()
+        # icp.Update()
 
-# print(type(volume), volume.ndim, volume.shape)
+        # aligned = source.transform(icp.GetMatrix())
 
-# volume = source.cast_to_poly_points().delaunay_3d()
+        # bounds = source.bounds
 
-# if volume is not None:
-#     verts, faces, _, _ = measure.marching_cubes(volume, level=0.5)
+        # sk_grid = pv.ImageData()
 
-#     source = pv.PolyData(verts, faces)
+        # sk_grid.origin = (bounds[0], bounds[1], bounds[2])
 
-resampled = None
+        # sk_grid.spacing = (
+        #     abs(bounds[0]-bounds[1]) / resolution[0],
+        #     abs(bounds[2]-bounds[3]) / resolution[1],
+        #     abs(bounds[4]-bounds[5]) / resolution[2]
+        # )
 
-if CONTOUR:
-    s_data = pv.create_grid(source, dimensions=(
-        abs(source.bounds[0]-source.bounds[1]),
-        abs(source.bounds[2]-source.bounds[3]),
-        abs(source.bounds[4]-source.bounds[5])
-    ))
+        # sk_grid.dimensions = resolution[0] + 1, resolution[1] + 1, resolution[2] + 1
 
-    resampled = s_data.sample(source)
+        # sampled = sk_grid.sample(source)
 
-    if resampled is not None:
-        print(resampled.point_data.keys())
+        # volume = np.array(source.points)
 
-        source = resampled.contour(1, scalars=resampled['RegionId'],
-                                   method='marching_cubes', progress_bar=True)
+        # print(type(volume), volume.ndim, volume.shape)
+
+        # volume = source.cast_to_poly_points().delaunay_3d()
+
+        # if volume is not None:
+        #     verts, faces, _, _ = measure.marching_cubes(volume, level=0.5)
+
+        #     source = pv.PolyData(verts, faces)
+
+        # resampled = None
+
+        # if CONTOUR:
+        #     s_data = pv.create_grid(source, dimensions=(
+        #         abs(source.bounds[0]-source.bounds[1]),
+        #         abs(source.bounds[2]-source.bounds[3]),
+        #         abs(source.bounds[4]-source.bounds[5])
+        #     ))
+
+        #     resampled = s_data.sample(source)
+
+        #     if resampled is not None:
+        #         print(resampled.point_data.keys())
+
+        #         source = resampled.contour(1, scalars=resampled['RegionId'],
+        #                                 method='marching_cubes', progress_bar=True)
+                
+        #         print(source)
+
+        #     sourcex = source.threshold([ref_bounds[0], ref_bounds[1]], scalars='x')
+        #     sourcey = sourcex.threshold([ref_bounds[2], ref_bounds[3]], scalars='y') # type: ignore
+        #     sourcez = sourcey.threshold([ref_bounds[4], ref_bounds[5]], scalars='z') # type: ignore
+
+        # source_mesh = sourcez
+
+        # if sourcez is not None:
+        #     source_mesh = sourcez.threshold(-1e4) # type: ignore
+
+
+        # Widgets
+
+        t_slider = QSlider(Qt.Orientation.Horizontal, self)
+        t_slider.setRange(0, 100)
+        t_slider.setValue(40)
+        t_slider.setSingleStep(5)
+        t_slider.setPageStep(10)
+        t_slider.setTickPosition(QSlider.TickPosition.TicksAbove)
+        t_slider.valueChanged.connect(self.update_threshold_val)
+        t_slider.sliderReleased.connect(self.threshold_change)
+
+        self.t_slider = t_slider
+
+        layout.addWidget(self.t_slider)
+
+        self.submit_button = QPushButton("Submit")
+        self.submit_button.clicked.connect(self.submit)
+
+        layout.addWidget(self.submit_button)
+
+        self.threshold_label = QLabel("* -2e4", self)
+
+        layout.addWidget(self.threshold_label)
+
+
+        # Visualize meshes
+
+        box = pv.Box(self.ref_bounds)
+
+        self.plotter: pv.Plotter = pvqt.QtInteractor(self) # type: ignore
+
+        self.tgt_actor = self.plotter.add_mesh(self.tgt_mesh, color='lightgray')
+
+        self.ref_actor = self.plotter.add_mesh(self.ref_mesh, opacity=0.4)
+
+        if PLOT_BOX:
+            _ = self.plotter.add_mesh(box, opacity=0.6)
+
+        # plotter.add_mesh_threshold(mesh, pointa=(-2e4,1), pointb=(0,1))
+
+        self.plotter.camera_position = 'xy'
+
+        layout.addWidget(self.plotter) # type: ignore
+
+        self.plotter.show()
+    
+    def update_threshold_val(self, value):
+        self.threshold_val = value
+    
+    def threshold_change(self):
+        self.threshold_label.setText(f"{self.threshold_val} * -2e4")
         
-        print(source)
+        self.threshold((self.threshold_val / 10) * -2e4)
 
-print(source)
+        if self.tgt_mesh is None:
+            exit("Source could not be thresholded")
+        
+        self.rerender('tgt')
+    
+    def threshold(self, val, mesh=None):
+        mesh = self.get_mesh(mesh)
 
-#     sourcex = source.threshold([ref_bounds[0], ref_bounds[1]], scalars='x')
-#     sourcey = sourcex.threshold([ref_bounds[2], ref_bounds[3]], scalars='y') # type: ignore
-#     sourcez = sourcey.threshold([ref_bounds[4], ref_bounds[5]], scalars='z') # type: ignore
+        self.tgt_mesh = mesh.threshold(val, progress_bar=True)
 
-# source_mesh = sourcez
+        if self.tgt_mesh is None:
+            exit("Source could not be thresholded")
+    
+    def clip_box(self, mesh=None):
+        mesh = self.get_mesh(mesh)
 
-# if sourcez is not None:
-#     source_mesh = sourcez.threshold(-1e4) # type: ignore
+        self.tgt_mesh = mesh.clip_box(self.ref_bounds, invert=False,
+                                      progress_bar=True)
+    
+        if self.tgt_mesh is None:
+            exit("Target mesh could not be clipped")
 
-box = pv.Box(ref_bounds)
+    def find_largest(self, mesh=None):
+        mesh = self.get_mesh(mesh)
 
-plotter = pv.Plotter()
+        self.tgt_mesh = mesh.connectivity('largest', progress_bar=True)
 
-_ = plotter.add_mesh(source, color='lightgray')
+        if self.tgt_mesh is None:
+            exit("Largest connectivity extraction failed")
+    
+    def get_mesh(self, mesh):
+        mesh = self.alpha_mesh if mesh is None else mesh
 
-_ = plotter.add_mesh(reference, opacity=0.4)
+        if mesh is None:
+            exit("Target mesh is undefined")
+        
+        return mesh
+    
+    def rerender(self, actor=None):
+        if actor is None:
+            self.plotter.clear()
+        else:
+            if actor == 'tgt':
+                self.plotter.remove_actor(self.tgt_actor)
 
-if PLOT_BOX:
-    _ = plotter.add_mesh(box, opacity=0.6)
+                self.tgt_actor = self.plotter.add_mesh(self.tgt_mesh)
+            else:
+                self.plotter.clear()
+        
+        self.plotter.show()
 
-# plotter.add_mesh_threshold(mesh, pointa=(-2e4,1), pointb=(0,1))
+    def submit(self):
+        self.threshold(self.threshold_val)
+        self.clip_box()
+        self.find_largest()
 
-plotter.camera_position = 'xy'
 
-plotter.show()
+
+
+qt_app = QApplication([])
+
+window = MainWindow()
+
+window.show()
+
+qt_app.exec_()
+

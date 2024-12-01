@@ -24,22 +24,22 @@ class POINTER[T](ct._Pointer):
 
 class Path(ct.Structure):
     _fields_ = [
-        ("points", ct.POINTER(ct.c_int)),
-        ("plen", ct.c_int),
-        ("dlen", ct.c_int)
+        ("points", ct.POINTER(ct.c_int32)),
+        ("plen", ct.c_int32),
+        ("dlen", ct.c_int32)
     ]
 
 class Point(ct.Structure):
     _fields_ = [
-        ("data", ct.POINTER(ct.c_int)),
-        ("seg_i", ct.c_int)
+        ("data", ct.POINTER(ct.c_int32)),
+        ("seg_i", ct.c_int32)
     ]
 
 class Segmented(ct.Structure):
     _fields_ = [
         ("points", ct.POINTER(Point)),
         ("rsize", ct.c_size_t),
-        ("n_seg", ct.c_int),
+        ("n_seg", ct.c_int32),
         ("paths", ct.POINTER(Path))
     ]
 
@@ -63,26 +63,31 @@ nn.argtypes = [
     ct.POINTER(Segmented)
 ]
 
-def nearest_neighbors(ref: POINTER[Segmented], mesh: POINTER[Mesh], 
-                      seg: POINTER[Segmented]):
-    nn(ref, mesh, seg)
+def nearest_neighbors(ref: Segmented, mesh: Mesh, 
+                      seg: Segmented):
+    nn(ct.byref(ref), ct.byref(mesh), ct.byref(seg))
 
 nns = lib.c_neighbors_from_segmented
 nns.restype = None
 nns.argtypes = [
     ct.POINTER(Segmented),
-    ndpointer(ct.c_int, flags="C_CONTIGUOUS"),
-    ndpointer(ct.c_int, flags="C_CONTIGUOUS"),
-    ct.c_int,
+    ndpointer(ct.c_double, flags="C_CONTIGUOUS"),
+    ndpointer(ct.c_int32, flags="C_CONTIGUOUS"),
+    ct.c_int32,
     ct.POINTER(Segmented)
 ]
 
-def neighbors_from_segmented(ref: POINTER[Segmented], pts: np.ndarray,
+def neighbors_from_segmented(ref: Segmented, pts: np.ndarray,
                              skeleton: np.ndarray
-                             ) -> POINTER[Segmented] | None:
-    tseg: POINTER[Segmented] | None = None
+                             ) -> Segmented:
+    tseg = Segmented(
+        ct.POINTER(Point)(),
+        0,
+        0,
+        ct.POINTER(Path)()
+    )
 
-    nns(ref, pts, skeleton, skeleton.size, tseg)
+    nns(ct.byref(ref), pts, skeleton, skeleton.size, ct.byref(tseg))
 
     return tseg
 
@@ -90,31 +95,29 @@ spc = lib.c_seg_pv2c
 spc.restype = None
 spc.argtypes = [
     ndpointer(ct.c_double, flags="C_CONTIGUOUS"),
-    ndpointer(ct.c_int, flags="C_CONTIGUOUS"),
-    ct.c_int,
+    ndpointer(ct.c_int32, flags="C_CONTIGUOUS"),
+    ct.c_int32,
     ct.POINTER(Segmented)
 ]
 
-something = ct.pointer(ct.c_int(10))
-
 def seg_pv2c(pts: np.ndarray, 
-             lines: np.ndarray) -> POINTER[Segmented] | None:
-    seg: POINTER[Segmented] | None = None
+             lines: np.ndarray) -> Segmented:
+    seg: Segmented = Segmented(
+        ct.POINTER(Point)(),
+        0,
+        0,
+        ct.POINTER(Path)()
+    )
 
-    spc(pts, lines, lines.size, seg)
+    spc(pts, lines, lines.size, ct.byref(seg))
 
     return seg
 
 scp = lib.seg_c2pv
-scp.restype = None
+scp.restype = np.ndarray
 scp.argtypes = [
-    ct.POINTER(Segmented),
-    ndpointer(ct.c_int, flags="C_CONTIGUOUS")
+    ct.POINTER(Segmented)
 ]
 
-def seg_c2pv(seg: POINTER[Segmented]) -> np.ndarray:
-    lines = np.ndarray(4)
-
-    scp(seg, lines)
-
-    return lines
+def seg_c2pv(seg: Segmented) -> np.ndarray:
+    return scp(ct.byref(seg))

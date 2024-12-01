@@ -36,23 +36,36 @@ conn = np.array([
 
     # anomaly line
     5, 0, 7, 8, 9, 4
-])
+], dtype=np.int32)
 
 ref_conn: np.ndarray = np.array([
     7, 0, 1, 2, 3, 4, 5, 6
-])
+], dtype=np.int32)
+
+print(ref_conn.dtype)
+print(ref_conn.flags)
+print(ref_conn.shape)
+
+for i in range(ref_conn.size):
+    print(ref_conn[i])
 
 segmented = seg_pv2c(ref_verts, ref_conn)
 
-new_target = None
+print("found segmented")
 
-if segmented is not None:
-    new_target = neighbors_from_segmented(segmented, verts, conn)
+# new_target = None
+
+# if segmented is not None:
+#     print(verts.dtype, conn.dtype)
+#     new_target = neighbors_from_segmented(segmented, verts, conn)
 
 target = None
 
-if new_target is not None:
-    lines = seg_c2pv(new_target)
+if segmented is not None:
+    lines = seg_c2pv(segmented)
+
+    print(lines)
+
     target = pv.PolyData(verts, lines=lines)
 
 if target is None:
