@@ -3,7 +3,7 @@ import pyvista as pv
 import numpy as np
 
 from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, \
-QSlider, QPushButton, QLabel
+QSlider, QPushButton, QLabel, QAction, QHBoxLayout, QGridLayout, QCheckBox
 
 from PyQt5.QtCore import Qt
 
@@ -13,13 +13,15 @@ from vtkmodules.vtkCommonDataModel import vtkIterativeClosestPointTransform
 
 import vtk
 
-FILENAME = "./data/topcow_mr_002_0000.nii.gz"
+FILENAME = "./data/topcow_mr_001_0000.nii.gz"
 
 REF_FILENAME = "./data/topcow_mr_001.nii.gz"
 
 PLOT_BOX = False
 
 CONTOUR = False
+
+DEFAULT_THRESHOLD = 2.1
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -28,13 +30,32 @@ class MainWindow(QMainWindow):
         # Initialize Qt window
 
         self.setWindowTitle("Visualization")
-        self.setGeometry(100, 100, 100, 100)
+        # self.setGeometry(100, 100, 100, 100)
 
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
+        page_layout = QVBoxLayout()
 
-        layout = QVBoxLayout()
-        central_widget.setLayout(layout)
+        slider_layout = QHBoxLayout()
+        subpage_layout = QHBoxLayout()
+
+        sidebar_layout = QVBoxLayout()
+        mesh_layout = QVBoxLayout()
+
+        sidebar_layout.setSpacing(0)
+        sidebar_layout.setContentsMargins(0, 0, 0, 0)
+
+        subpage_layout.addLayout(sidebar_layout)
+        subpage_layout.addLayout(mesh_layout)
+
+        page_layout.addLayout(slider_layout)
+        page_layout.addLayout(subpage_layout)
+
+        # central_widget = QWidget()
+        # self.setCentralWidget(central_widget)
+
+        # mesh_layout = QHBoxLayout()
+        # mesh_layout.setStretch(0, 40)
+        # mesh_layout.setStretch(1, 200)
+        # central_widget.setLayout(mesh_layout)
 
 
         # Read reference mesh
@@ -69,7 +90,11 @@ class MainWindow(QMainWindow):
             self.ref_bounds = self.ref_mesh.bounds
 
         # -2.1e4
-        self.threshold(-2.3e4)
+        self.threshold(DEFAULT_THRESHOLD * -1e4)
+
+        self.threshold_val = DEFAULT_THRESHOLD * 10
+
+        self.reset_mesh = self.tgt_mesh
 
         # resolution = (1000, 1000, 1000)
 
@@ -98,19 +123,6 @@ class MainWindow(QMainWindow):
         # writer.Write()
 
         # myPype= pypes.PypeRun("vmtknetworkextraction -ifile ArteryObjAN129–10.vtp -advancementratio 1 -ofile centerlines/ArteryObjAN129–10.vtp")
-
-        # icp = vtkIterativeClosestPointTransform()
-        # icp.SetSource(source)
-        # icp.SetTarget(reference)
-        # icp.GetLandmarkTransform().SetModeToRigidBody()
-        # icp.SetMaximumNumberOfLandmarks(100)
-        # icp.SetMaximumMeanDistance(.00001)
-        # icp.SetMaximumNumberOfIterations(500)
-        # icp.CheckMeanDistanceOn()
-        # icp.StartByMatchingCentroidsOn()
-        # icp.Update()
-
-        # aligned = source.transform(icp.GetMatrix())
 
         # bounds = source.bounds
 
@@ -168,29 +180,76 @@ class MainWindow(QMainWindow):
         #     source_mesh = sourcez.threshold(-1e4) # type: ignore
 
 
+        # Menu
+
+        main_menu = self.menuBar()
+
+        file_menu = None
+
+        if main_menu is not None:
+            file_menu = main_menu.addMenu("Edit")
+
+        clear_btn = QAction("Reset values", self)
+        clear_btn.setShortcut("Ctrl+R")
+        clear_btn.triggered.connect(self.action_reset)
+
+        isolate_btn = QAction("Isolate CoW region", self)
+        isolate_btn.setShortcut("Ctrl+I")
+        isolate_btn.triggered.connect(self.action_isolate)
+
+        ref_btn = QAction("Show reference CoW", self)
+        ref_btn.setShortcut("Ctrl+S")
+        ref_btn.triggered.connect(self.action_show_ref)
+
+        if file_menu is not None:
+            file_menu.addAction(clear_btn)
+            file_menu.addAction(isolate_btn)
+            file_menu.addAction(ref_btn)
+
+
         # Widgets
 
+        t_label = QLabel("Threshold value: ", self)
+
+        slider_layout.addWidget(t_label)
+
         t_slider = QSlider(Qt.Orientation.Horizontal, self)
-        t_slider.setRange(0, 100)
-        t_slider.setValue(40)
-        t_slider.setSingleStep(5)
-        t_slider.setPageStep(10)
+        t_slider.setRange(0, 30)
+        t_slider.setValue(21)
+        t_slider.setSingleStep(1)
+        t_slider.setPageStep(5)
         t_slider.setTickPosition(QSlider.TickPosition.TicksAbove)
         t_slider.valueChanged.connect(self.update_threshold_val)
         t_slider.sliderReleased.connect(self.threshold_change)
 
         self.t_slider = t_slider
 
-        layout.addWidget(self.t_slider)
+        slider_layout.addWidget(self.t_slider)
+
+        self.threshold_label = QLabel("* -1e4", self)
+
+        slider_layout.addWidget(self.threshold_label)
 
         self.submit_button = QPushButton("Submit")
         self.submit_button.clicked.connect(self.submit)
 
-        layout.addWidget(self.submit_button)
+        sidebar_layout.addWidget(self.submit_button)
 
-        self.threshold_label = QLabel("* -2e4", self)
+        self.align_btn = QPushButton("Align")
+        self.align_btn.clicked.connect(self.align)
 
-        layout.addWidget(self.threshold_label)
+        sidebar_layout.addWidget(self.align_btn)
+
+        self.isolate_check = QCheckBox("Isolate CoW region")
+        self.isolate_check.stateChanged.connect(self.action_isolate)
+
+        sidebar_layout.addWidget(self.isolate_check)
+
+        self.ref_check = QCheckBox("Show reference CoW")
+        self.ref_check.setChecked(True)
+        self.ref_check.stateChanged.connect(self.action_show_ref)
+
+        sidebar_layout.addWidget(self.ref_check)
 
 
         # Visualize meshes
@@ -201,7 +260,10 @@ class MainWindow(QMainWindow):
 
         self.tgt_actor = self.plotter.add_mesh(self.tgt_mesh, color='lightgray')
 
-        self.ref_actor = self.plotter.add_mesh(self.ref_mesh, opacity=0.4)
+        self.pclipped_mesh = None
+
+        self.ref_actor = self.plotter.add_mesh(self.ref_mesh, opacity=0.4,
+                                               color='purple')
 
         if PLOT_BOX:
             _ = self.plotter.add_mesh(box, opacity=0.6)
@@ -210,22 +272,26 @@ class MainWindow(QMainWindow):
 
         self.plotter.camera_position = 'xy'
 
-        layout.addWidget(self.plotter) # type: ignore
+        mesh_layout.addWidget(self.plotter) # type: ignore
+
+        widget = QWidget()
+        widget.setLayout(page_layout)
+        self.setCentralWidget(widget)
 
         self.plotter.show()
     
     def update_threshold_val(self, value):
-        self.threshold_val = value
+        self.threshold_val = value / 10
+        self.threshold_label.setText(f"{self.threshold_val} * -1e4")
     
     def threshold_change(self):
-        self.threshold_label.setText(f"{self.threshold_val} * -2e4")
-        
-        self.threshold((self.threshold_val / 10) * -2e4)
+        self.isolate_check.setChecked(False)
+        self.threshold((self.threshold_val) * -1e4)
 
         if self.tgt_mesh is None:
             exit("Source could not be thresholded")
         
-        self.rerender('tgt')
+        self.rerender(self.tgt_mesh)
     
     def threshold(self, val, mesh=None):
         mesh = self.get_mesh(mesh)
@@ -260,25 +326,70 @@ class MainWindow(QMainWindow):
         
         return mesh
     
-    def rerender(self, actor=None):
-        if actor is None:
-            self.plotter.clear()
-        else:
-            if actor == 'tgt':
-                self.plotter.remove_actor(self.tgt_actor)
+    def rerender(self, mesh=None):
+        mesh = self.get_mesh(mesh)
+        
+        self.plotter.remove_actor(self.tgt_actor)
 
-                self.tgt_actor = self.plotter.add_mesh(self.tgt_mesh)
-            else:
-                self.plotter.clear()
+        self.tgt_actor = self.plotter.add_mesh(mesh,
+                                               color='lightgray')
         
         self.plotter.show()
+    
+    def action_reset(self):
+        self.threshold_label.setText(f"{DEFAULT_THRESHOLD} * -1e4")
+        self.t_slider.setValue(int(DEFAULT_THRESHOLD * 10))
+        self.isolate_check.setChecked(False)
+
+        self.tgt_mesh = self.reset_mesh
+
+        self.rerender(self.tgt_mesh)
+    
+    def action_isolate(self):
+        if self.isolate_check.isChecked():
+            self.pclipped_mesh = self.tgt_mesh
+
+            self.clip_box(self.tgt_mesh)
+
+            self.rerender(self.tgt_mesh)
+        else:
+            self.rerender(self.pclipped_mesh)
+            self.tgt_mesh = self.pclipped_mesh
+    
+    def action_show_ref(self):
+        if self.ref_actor is not None:
+            self.plotter.remove_actor(self.ref_actor)
+
+            self.plotter.show()
+
+            self.ref_actor = None
+        else:
+            self.ref_actor = self.plotter.add_mesh(self.ref_mesh, opacity=0.4,
+                                                   color='purple')
+
+            self.plotter.show()
+    
+    def align(self):
+        icp = vtkIterativeClosestPointTransform()
+        icp.SetSource(self.tgt_mesh)
+        icp.SetTarget(self.ref_mesh)
+        icp.GetLandmarkTransform().SetModeToRigidBody()
+        icp.SetMaximumNumberOfLandmarks(100)
+        icp.SetMaximumMeanDistance(.00001)
+        icp.SetMaximumNumberOfIterations(500)
+        icp.CheckMeanDistanceOn()
+        icp.StartByMatchingCentroidsOn()
+        icp.Update()
+
+        self.tgt_mesh = self.tgt_mesh.transform(icp.GetMatrix())
+
+        self.rerender(self.tgt_mesh)
 
     def submit(self):
-        self.threshold(self.threshold_val)
-        self.clip_box()
-        self.find_largest()
-
-
+        self.threshold(self.threshold_val * -1e4)
+        self.clip_box(self.tgt_mesh)
+        self.find_largest(self.tgt_mesh)
+        self.rerender(self.tgt_mesh)
 
 
 qt_app = QApplication([])
