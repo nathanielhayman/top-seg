@@ -53,9 +53,20 @@ struct mesh {
 typedef struct mesh mesh_t;
 
 void print_seg(const seg_t *seg) {
+    printf("============================\n");
     printf("Seglist at %d\n", seg);
     printf("Length: %d\n", seg->n_seg);
+    printf("Num points: %d\n", seg->rsize);
+    printf("Paths at %d\n", seg->paths);
     printf("First path length: %d\n", seg->paths != NULL ? seg->paths[0].dlen : 0);
+    printf("============================\n");
+}
+
+void print_arr(const int *arr, int asize) {
+    for (int i = 0; i < asize; i++) {
+        printf("%d ", arr[i]);
+    }
+    printf("\n");
 }
 
 double vec_dist(const double *v1, const double *v2) {
@@ -86,11 +97,14 @@ void lines_pv2c(const int* lines, int lsize, int **cl) {
 }
 
 // Converts PyVista line representation to a segmented line list in C
+// Warning: ensure that the `lines` variable is null-terminated!
 void seg_pv2c(double **pts, const int *lines, int lsize, seg_t *seg) {
     dbg_printf("calling seg_pv2c\n");
     
     int size = lines[0];
     int i = 0;
+    seg->paths = NULL;
+    seg->points = NULL;
     seg->n_seg = 0;
     seg->rsize = 0;
 
@@ -111,13 +125,14 @@ void seg_pv2c(double **pts, const int *lines, int lsize, seg_t *seg) {
         seg->rsize += size;
         i += size + 1;
         size = lines[i];
+        dbg_printf("%d\n", size);
     }
 
     print_seg(seg);
 
-    path_t *paths = (path_t *)calloc(seg->n_seg, sizeof(path_t*));
+    path_t *paths = (path_t *)calloc(seg->n_seg, sizeof(path_t));
 
-    seg->points = (pt_t *)malloc(seg->rsize * sizeof(pt_t*));
+    seg->points = (pt_t *)malloc(seg->rsize * sizeof(pt_t));
 
     size = lines[0];
     i = 0;
@@ -139,7 +154,7 @@ void seg_pv2c(double **pts, const int *lines, int lsize, seg_t *seg) {
 
             paths[n].points[j - (i+1)] = lines[j];
 
-            dbg_printf("%d ", lines[j]);
+            dbg_printf("%d %d, ", lines[j], pts[lines[j]]);
 
             paths[n].plen += 1;
             // j - i != 1 ? vec_dist(
@@ -147,6 +162,11 @@ void seg_pv2c(double **pts, const int *lines, int lsize, seg_t *seg) {
             //     seg->points[lines[j-1]].data
             // ) : 0; // actually compute distance
             // dbg_printf("seg_i: %d\n", seg->points[lines[j]].seg_i);
+        }
+        dbg_printf("\n");
+
+        for (int x = 0; x < seg->rsize; x++) {
+            dbg_printf("%d ", seg->points[x].data);
         }
         dbg_printf("\n");
 
@@ -168,28 +188,40 @@ void seg_pv2c(double **pts, const int *lines, int lsize, seg_t *seg) {
     dbg_printf("n_seg: %d\n", seg->n_seg);
 }
 
-int* seg_c2pv(const seg_t *seg) {
+int seg_c2pv(const seg_t *seg, int **lines) {
     print_seg(seg);
 
-    int *lines = malloc((seg->rsize + seg->n_seg) * sizeof(int));
+    dbg_printf("%d\n", (seg->rsize + seg->n_seg + 1));
+
+    int asize = seg->rsize + seg->n_seg + 1;
+
+    *lines = malloc(asize * sizeof(int));
+
+    int *lp = *lines;
+
+    dbg_printf("%d\n", *lines);
 
     dbg_printf("allocated space\n");
 
     int off = 0;
 
     for (int i = 0; i < seg->n_seg; i++) {
-        lines[off] = seg->paths[i].dlen;
-        dbg_printf("%d ", seg->paths[i].dlen);
-        off++;
+        lp[off] = seg->paths[i].dlen;
+        dbg_printf("%d ", off);
         for (int j = 0; j < seg->paths[i].dlen; j++) {
             dbg_printf("%d ", seg->paths[i].points[j]);
-            lines[off+j] = seg->paths[i].points[j];
-            off++;
+            lp[off+j+1] = seg->paths[i].points[j];
         }
+        off += seg->paths[i].dlen + 1;
         dbg_printf("\n");
     }
 
-    return lines;
+    print_arr(lp, (asize));
+
+    // null terminate
+    lp[asize - 1] = 0;
+
+    return asize;
 }
 
 void skeletonize(const mesh_t *mesh, int *skeleton) {
@@ -206,6 +238,9 @@ void segment(const mesh_t *mesh, const int *lines, seg_t *seg) {
 
 void nearest_neighbors(const seg_t* ref, seg_t *tgt) {
     // paths on the target skeleton which already have a correspondence
+    print_arr(ref->paths[0].points, ref->paths[0].dlen);
+    print_arr(tgt->paths[0].points, tgt->paths[0].dlen);
+
     int *processed = (int *)calloc(tgt->n_seg, sizeof(int));
 
     int psize = 0;
@@ -226,13 +261,23 @@ void nearest_neighbors(const seg_t* ref, seg_t *tgt) {
             path_t r_path = ref->paths[i];
 
             path_t t_path = tgt->paths[j];
+
+            dbg_printf("FIND CLOSEST\n");
             
             // for each point in the reference path, find the nearest neighbor
             // in the opposing mesh and increment the total distance
             for (int rk = 0; rk < r_path.dlen; rk++) {
-                dbg_printf("%d\n", tgt->points[t_path.points[rk]].data[0]);
+                for (int x = 0; x < tgt->rsize; x++) {
+                    dbg_printf("%d ", tgt->points[x].data);
+                }
+                dbg_printf("\n");
+
+                dbg_printf("%d\n", r_path.points[rk]);
+                dbg_printf("%d\n", tgt->points[r_path.points[rk]]);
+                dbg_printf("%d\n", tgt->points[r_path.points[rk]].data);
 
                 for (int tk = 0; tk < t_path.dlen; tk++) {
+                    dbg_printf("call BLAS\n");
                     double d = vec_dist(tgt->points[t_path.points[tk]].data, 
                                         ref->points[r_path.points[rk]].data);
                     

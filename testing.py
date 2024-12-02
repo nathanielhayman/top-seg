@@ -1,6 +1,8 @@
 import pyvista as pv
 import numpy as np
 
+import ctypes as ct
+
 from cutil import *
 
 verts = np.array([
@@ -35,11 +37,14 @@ conn = np.array([
     7, 0, 1, 2, 3, 4, 5, 6,
 
     # anomaly line
-    5, 0, 7, 8, 9, 4
+    5, 0, 7, 8, 9, 4,
+
+    # null terminator
+    0
 ], dtype=np.int32)
 
 ref_conn: np.ndarray = np.array([
-    7, 0, 1, 2, 3, 4, 5, 6
+    7, 0, 1, 2, 3, 4, 5, 6, 0
 ], dtype=np.int32)
 
 print(ref_conn.dtype)
@@ -57,6 +62,7 @@ print("found segmented")
 
 # if segmented is not None:
 #     print(verts.dtype, conn.dtype)
+#     print(segmented.rsize)
 #     new_target = neighbors_from_segmented(segmented, verts, conn)
 
 target = None
