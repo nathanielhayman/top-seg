@@ -58,17 +58,17 @@ segmented = seg_pv2c(ref_verts, ref_conn)
 
 print("found segmented")
 
-# new_target = None
+new_target = None
 
-# if segmented is not None:
-#     print(verts.dtype, conn.dtype)
-#     print(segmented.rsize)
-#     new_target = neighbors_from_segmented(segmented, verts, conn)
+if segmented is not None:
+    print(verts.dtype, conn.dtype)
+    print(segmented.rsize)
+    new_target = neighbors_from_segmented(segmented, verts, conn)
 
 target = None
 
-if segmented is not None:
-    lines = seg_c2pv(segmented)
+if new_target is not None:
+    lines = seg_c2pv(new_target)
 
     print(lines)
 

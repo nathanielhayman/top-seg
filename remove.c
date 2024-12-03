@@ -1,5 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <math.h>
+#include <string.h>
 
 #include <cblas.h>
 
@@ -21,7 +23,7 @@
 
 struct path {
     int *points;
-    int plen;
+    double plen;
     int dlen;
 };
 
@@ -88,17 +90,28 @@ double vec_dist(const double *v1, const double *v2) {
     return res;
 }
 
-double get_nearest_score(double average_dist, long path_len) {
+void pt_cpy(pt_t *pt_dest, pt_t *pt_src) {
+    memcpy(pt_dest->data, pt_src->data, DIM);
+    pt_dest->seg_i = pt_src->seg_i;
+}
+
+void path_cpy(path_t *path_dest, path_t *path_src) {
+    memcpy(path_dest->points, path_src->points, path_src->dlen);
+    path_dest->dlen = path_src->dlen;
+    path_dest->plen = path_src->plen;
+}
+
+double get_nearest_score(double average_dist, double path_len) {
     return average_dist + path_len;
 }
 
-void lines_pv2c(const int* lines, int lsize, int **cl) {
+// void lines_pv2c(const int* lines, int lsize, int **cl) {
 
-}
+// }
 
 // Converts PyVista line representation to a segmented line list in C
 // Warning: ensure that the `lines` variable is null-terminated!
-void seg_pv2c(double **pts, const int *lines, int lsize, seg_t *seg) {
+void seg_pv2c(double *pts, const int *lines, int lsize, seg_t *seg) {
     dbg_printf("calling seg_pv2c\n");
     
     int size = lines[0];
@@ -128,6 +141,8 @@ void seg_pv2c(double **pts, const int *lines, int lsize, seg_t *seg) {
         dbg_printf("%d\n", size);
     }
 
+    seg->rsize -= seg->n_seg;
+
     print_seg(seg);
 
     path_t *paths = (path_t *)calloc(seg->n_seg, sizeof(path_t));
@@ -150,7 +165,7 @@ void seg_pv2c(double **pts, const int *lines, int lsize, seg_t *seg) {
 
         for (int j = i+1; j < i + size + 1; j++) {
             seg->points[lines[j]].seg_i = n;
-            seg->points[lines[j]].data = pts[lines[j]];
+            seg->points[lines[j]].data = (pts + lines[j] * DIM);
 
             paths[n].points[j - (i+1)] = lines[j];
 
@@ -165,10 +180,10 @@ void seg_pv2c(double **pts, const int *lines, int lsize, seg_t *seg) {
         }
         dbg_printf("\n");
 
-        for (int x = 0; x < seg->rsize; x++) {
-            dbg_printf("%d ", seg->points[x].data);
-        }
-        dbg_printf("\n");
+        // for (int x = 0; x < seg->rsize; x++) {
+        //     dbg_printf("%d ", seg->points[x].data);
+        // }
+        // dbg_printf("\n");
 
         dbg_printf("plen: %d\n", paths[n].plen);
 
@@ -248,8 +263,8 @@ void nearest_neighbors(const seg_t* ref, seg_t *tgt) {
     dbg_printf("TRAVERSE\n");
 
     for (int i = 0; i < ref->n_seg; i++) {
-        double max_score = 0;
-        int max_path = 0;
+        double min_score = __DBL_MAX__;
+        int min_path = 0;
 
         for (int j = 0; j < tgt->n_seg; j++) {
             if (processed[j])
@@ -262,67 +277,86 @@ void nearest_neighbors(const seg_t* ref, seg_t *tgt) {
 
             path_t t_path = tgt->paths[j];
 
+            printf("t_path plen: %f\n", t_path.plen);
+
             dbg_printf("FIND CLOSEST\n");
             
             // for each point in the reference path, find the nearest neighbor
             // in the opposing mesh and increment the total distance
             for (int rk = 0; rk < r_path.dlen; rk++) {
-                for (int x = 0; x < tgt->rsize; x++) {
-                    dbg_printf("%d ", tgt->points[x].data);
-                }
-                dbg_printf("\n");
+                // for (int x = 0; x < tgt->rsize; x++) {
+                //     dbg_printf("%d ", tgt->points[x].data);
+                // }
+                // dbg_printf("\n");
 
-                dbg_printf("%d\n", r_path.points[rk]);
-                dbg_printf("%d\n", tgt->points[r_path.points[rk]]);
-                dbg_printf("%d\n", tgt->points[r_path.points[rk]].data);
+                // dbg_printf("%d\n", r_path.points[rk]);
+                // dbg_printf("%d\n", tgt->points[r_path.points[rk]]);
+                // dbg_printf("%f\n", tgt->points[r_path.points[rk]].data[1]);
 
                 for (int tk = 0; tk < t_path.dlen; tk++) {
-                    dbg_printf("call BLAS\n");
+                    // dbg_printf("call BLAS\n");
                     double d = vec_dist(tgt->points[t_path.points[tk]].data, 
                                         ref->points[r_path.points[rk]].data);
+
+                    // dbg_printf("%f\n", d);
                     
                     if (d < dist)
                         dist = d;
                 }
+
+                dbg_printf("smallest distance: %f\n", dist);
 
                 tdist += dist;
             }
 
             // score the target path's correspondence to the reference
             double score = get_nearest_score(
-                dist / ((double) r_path.dlen),
-                t_path.plen
+                tdist / ((double) r_path.dlen),
+                fabs(t_path.plen - r_path.plen)
             );
 
-            if (score > max_score) {
-                max_score = score;
-                max_path = j;
+            dbg_printf("plens: %f, %f\n", t_path.plen, r_path.plen);
+            dbg_printf("tdist: %f\n", tdist);
+            dbg_printf("distance: %f\n", tdist / ((double) r_path.dlen));
+            dbg_printf("path length: %f\n", fabs(t_path.plen - r_path.plen));
+            dbg_printf("score: %f\n", score);
+
+            if (score < min_score) {
+                min_score = score;
+                min_path = j;
             }   
         }
 
-        processed[max_path] = i;
-        psize += tgt->paths[max_path].dlen;
+        dbg_printf("min path: %d\n", min_path);
+
+        processed[min_path] = i+1;
+        psize += tgt->paths[min_path].dlen;
     }
 
     dbg_printf("SET PATHS\n");
 
     seg_t* new_seg = (seg_t *)malloc(sizeof(seg_t));
 
-    int path_ind = 0;
-
     // allocate path space for the number of paths in the reference
     new_seg->paths = (path_t *)malloc(ref->n_seg * sizeof(path_t));
 
     new_seg->n_seg = ref->n_seg;
 
+    int path_ind = 0;
+
     // add the maximum paths to the new seglist
     for (int i = 0; i < tgt->n_seg; i++) {
+        dbg_printf("%d: %d\n", i, processed[i]);
         if (!processed[i])
             continue;
-        
-        new_seg->paths[path_ind] = tgt->paths[i];
+
+        path_cpy(&new_seg->paths[path_ind], &tgt->paths[i]);
+
         path_ind++;
     }
+
+    dbg_printf("n_seg: %d\n", new_seg->n_seg);
+    print_arr(new_seg->paths[0].points, new_seg->paths[0].dlen);
 
     dbg_printf("SET POINTS\n");
 
@@ -332,13 +366,13 @@ void nearest_neighbors(const seg_t* ref, seg_t *tgt) {
     int point_ind = 0;
 
     // update points in target and add those with corresponding maximum paths
-    for (int i = 0; i < tgt->rsize; i++) {
+    for (int i = 0; i < ((int)tgt->rsize); i++) {
         int proc_val = processed[tgt->points[i].seg_i];
         if (!proc_val)
             continue;
-            
-        tgt->points[i].seg_i = proc_val;
-        new_seg->points[point_ind] = tgt->points[i];
+        
+        pt_cpy(&new_seg->points[point_ind], &tgt->points[i]);
+        tgt->points[i].seg_i = proc_val-1;
     }
 
     dbg_printf("finished processing, freeing variables\n");
@@ -346,12 +380,16 @@ void nearest_neighbors(const seg_t* ref, seg_t *tgt) {
     // free stale memory
     free(tgt->paths);
     free(tgt->points);
-    free(tgt);
+    // free(tgt);
+
+    dbg_printf("data freed\n");
 
     tgt->paths = new_seg->paths;
     tgt->points = new_seg->points;
     tgt->n_seg = new_seg->n_seg;
     tgt->rsize = new_seg->rsize;
+
+    dbg_printf("data set, exiting\n");
 }
 
 void c_find_skeleton(const mesh_t *mesh, seg_t *seg) {
@@ -372,14 +410,14 @@ void c_nearest_neighbors(const seg_t* ref, const mesh_t *mesh, seg_t *tseg) {
     nearest_neighbors(ref, tseg);
 }
 
-void c_neighbors_from_segmented(const seg_t *ref, double **pts,
+void c_neighbors_from_segmented(const seg_t *ref, double *pts,
                                 const int *skeleton, int ssize, seg_t *tseg) {
     seg_pv2c(pts, skeleton, ssize, tseg);
 
     nearest_neighbors(ref, tseg);
 }
 
-void c_seg_pv2c(double **pts, const int *lines, int lsize, seg_t *seg) {
+void c_seg_pv2c(double *pts, const int *lines, int lsize, seg_t *seg) {
     dbg_printf("[INFO]: converting to c skeleton\n");
 
     seg_pv2c(pts, lines, lsize, seg);

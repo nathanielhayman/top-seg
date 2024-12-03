@@ -71,7 +71,7 @@ nns = lib.c_neighbors_from_segmented
 nns.restype = None
 nns.argtypes = [
     ct.POINTER(Segmented),
-    ndpointer(ct.c_double, ndim=2, flags="C_CONTIGUOUS"),
+    ct.POINTER(ct.c_double),
     ndpointer(ct.c_int32, flags="C_CONTIGUOUS"),
     ct.c_int32,
     ct.POINTER(Segmented)
@@ -87,14 +87,17 @@ def neighbors_from_segmented(ref: Segmented, pts: np.ndarray,
         ct.POINTER(Path)()
     )
 
-    nns(ct.byref(ref), pts, skeleton, skeleton.size, ct.byref(tseg))
+    flat_pts = pts.flatten()
+    pts_ptr = flat_pts.ctypes.data_as(ct.POINTER(ct.c_double))
+
+    nns(ct.byref(ref), pts_ptr, skeleton, skeleton.size, ct.byref(tseg))
 
     return tseg
 
 spc = lib.c_seg_pv2c
 spc.restype = None
 spc.argtypes = [
-    ndpointer(ct.c_double, flags="C_CONTIGUOUS"),
+    ct.POINTER(ct.c_double),
     ndpointer(ct.c_int32, flags="C_CONTIGUOUS"),
     ct.c_int32,
     ct.POINTER(Segmented)
@@ -109,9 +112,10 @@ def seg_pv2c(pts: np.ndarray,
         ct.POINTER(Path)()
     )
 
-    p = pts.ctypes.data_as(ct.POINTER(ct.c_float))
+    flat_pts = pts.flatten()
+    pts_ptr = flat_pts.ctypes.data_as(ct.POINTER(ct.c_double))
 
-    spc(pts, lines, lines.size, ct.byref(seg))
+    spc(pts_ptr, lines, lines.size, ct.byref(seg))
 
     return seg
 
