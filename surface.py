@@ -4,7 +4,7 @@ import numpy as np
 
 from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, \
 QSlider, QPushButton, QLabel, QAction, QHBoxLayout, QGridLayout, QCheckBox, \
-QFileDialog
+QFileDialog, QInputDialog
 
 from PyQt5.QtCore import Qt
 
@@ -103,7 +103,7 @@ class MainWindow(QMainWindow):
 
         self.reset_mesh = None
 
-        self.pclipped_mesh = None
+        self.last_mesh = None
 
         self.box_actor = None
 
@@ -224,12 +224,20 @@ class MainWindow(QMainWindow):
         isolate_btn.triggered.connect(self.action_isolate)
 
         ref_btn = QAction("Show reference CoW", self)
-        ref_btn.setShortcut("Ctrl+S")
+        ref_btn.setShortcut("Ctrl+C")
         ref_btn.triggered.connect(self.action_show_ref)
+
+        undo_btn = QAction("Undo", self)
+        undo_btn.setShortcut("Ctrl+Z")
+        undo_btn.triggered.connect(self.action_undo)
 
         upload_btn = QAction("Upload target scan", self)
         upload_btn.setShortcut("Ctrl+Q")
         upload_btn.triggered.connect(self.action_upload_target)
+
+        save_btn = QAction("Save as", self)
+        save_btn.setShortcut("Ctrl+S")
+        save_btn.triggered.connect(self.action_save)
 
         refup_btn = QAction("Upload reference mesh", self)
         refup_btn.setShortcut("Ctrl+W")
@@ -239,14 +247,37 @@ class MainWindow(QMainWindow):
         ref1_btn.setShortcut("Ctrl+1")
         ref1_btn.triggered.connect(lambda _: self.set_ref_mesh(1))
 
+        ba_btn = QAction("Expand region on all", self)
+        ba_btn.setShortcut("Ctrl+H")
+        ba_btn.triggered.connect(lambda _: self.set_btype("all"))
+
+        bx_btn = QAction("Expand region on X", self)
+        bx_btn.setShortcut("Ctrl+J")
+        bx_btn.triggered.connect(lambda _: self.set_btype("x"))
+
+        by_btn = QAction("Expand region on Y", self)
+        by_btn.setShortcut("Ctrl+K")
+        by_btn.triggered.connect(lambda _: self.set_btype("y"))
+
+        bz_btn = QAction("Expand region on Z", self)
+        bz_btn.setShortcut("Ctrl+L")
+        bz_btn.triggered.connect(lambda _: self.set_btype("z"))
+
         if edit_menu is not None:
             edit_menu.addAction(clear_btn)
             edit_menu.addAction(isolate_btn)
             edit_menu.addAction(ref_btn)
+            edit_menu.addAction(undo_btn)
+            edit_menu.addSeparator()
+            edit_menu.addAction(ba_btn)
+            edit_menu.addAction(bx_btn)
+            edit_menu.addAction(by_btn)
+            edit_menu.addAction(bz_btn)
         
         if file_menu is not None:
             file_menu.addAction(upload_btn)
             file_menu.addAction(refup_btn)
+            file_menu.addAction(save_btn)
 
         if view_menu is not None:
             view_menu.addAction(ref1_btn)
@@ -277,22 +308,30 @@ class MainWindow(QMainWindow):
 
         slider_layout.addWidget(self.threshold_label)
 
-        b_label = QLabel("Localization box size: ", self)
+        self.b_type = "all"
 
-        bsize_layout.addWidget(b_label)
+        self.b_label = QLabel(f"Isolation box expansion on all: ", self)
 
-        self.bsize = 0
+        bsize_layout.addWidget(self.b_label)
+
+        self.bsize = {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        }
 
         self.bshow = False
 
         b_slider = QSlider(Qt.Orientation.Horizontal, self)
-        b_slider.setRange(0, 50)
-        b_slider.setValue(self.bsize)
+        b_slider.setRange(-20, 50)
+        b_slider.setValue(self.bsize["x"])
         b_slider.setSingleStep(1)
         b_slider.setPageStep(5)
         b_slider.setTickPosition(QSlider.TickPosition.TicksAbove)
         b_slider.valueChanged.connect(self.update_bsize_val)
         b_slider.sliderReleased.connect(self.bsize_val_change)
+
+        self.b_slider = b_slider
 
         bsize_layout.addWidget(b_slider)
 
@@ -350,10 +389,10 @@ class MainWindow(QMainWindow):
 
         sidebar_layout.addWidget(self.contour_btn)
 
-        self.isolate_check = QCheckBox("Isolate CoW region")
-        self.isolate_check.stateChanged.connect(self.action_isolate)
+        self.isolate_btn = QPushButton("Isolate CoW region")
+        self.isolate_btn.clicked.connect(self.action_isolate)
 
-        sidebar_layout.addWidget(self.isolate_check)
+        sidebar_layout.addWidget(self.isolate_btn)
 
         self.ref_check = QCheckBox("Show reference CoW")
         self.ref_check.setChecked(False)
@@ -403,12 +442,30 @@ class MainWindow(QMainWindow):
         self.rerender(self.tgt_mesh)
     
     def update_bsize_val(self, value):
-        self.bsize = value / 50
-        self.bsize_text.setText(f"+{self.bsize}x")
-    
+        if self.b_type == "all":
+            self.bsize["x"] = value / 50
+            self.bsize["y"] = value / 50
+            self.bsize["z"] = value / 50
+            self.bsize_text.setText(f"+{self.bsize['x']}x")
+        else:
+            self.bsize[self.b_type] = value / 50
+            self.bsize_text.setText(f"+{self.bsize[self.b_type]}x")
+
     def update_id_val(self, value):
         self.id_distance = value / 10
         self.id_text.setText(f"+{self.id_distance}px")
+
+    def set_btype(self, val="all"):
+        self.b_type = val
+
+        if val == "all":
+            self.bsize["y"] = self.bsize["x"]
+            self.bsize["z"] = self.bsize["x"]
+
+        self.b_slider.setValue(self.bsize[val] if val != "all" 
+                               else self.bsize["x"])
+
+        self.b_label.setText(f"Isolation box expansion on {val}: ")
     
     def bsize_val_change(self):
         self.box_mesh = pv.Box(self.get_bsize())
@@ -427,10 +484,10 @@ class MainWindow(QMainWindow):
 
         if b is None:
             return (0, 0, 0, 0, 0, 0)
-        
-        dx = self.bsize*abs(b[1] - b[0])
-        dy = self.bsize*abs(b[3] - b[2])
-        dz = self.bsize*abs(b[5] - b[4])
+
+        dx = self.bsize["x"]*abs(b[1] - b[0])
+        dy = self.bsize["y"]*abs(b[3] - b[2])
+        dz = self.bsize["z"]*abs(b[5] - b[4])
 
         return (b[0]-dx, b[1]+dx, b[2]-dy, b[3]+dy, b[4]-dz, b[5]+dz)
     
@@ -452,7 +509,7 @@ class MainWindow(QMainWindow):
         if self.tgt_mesh is None:
             exit("Target mesh could not be clipped")
 
-    def find_largest(self, mesh=None):
+    def find_largest(self, mesh=None, n=1):
         mesh = self.get_mesh(mesh)
 
         # geo_filter = vtk.vtkGeometryFilter()
@@ -461,14 +518,14 @@ class MainWindow(QMainWindow):
 
         # data = geo_filter.GetOutput()
 
-        connectivity_filter = vtk.vtkConnectivityFilter()
-        connectivity_filter.SetInputData(mesh)
-        connectivity_filter.SetExtractionModeToLargestRegion()
-        connectivity_filter.Update()
+        # connectivity_filter = vtk.vtkConnectivityFilter()
+        # connectivity_filter.SetInputData(mesh)
+        # connectivity_filter.SetExtractionModeToLargestRegion()
+        # connectivity_filter.Update()
 
-        self.tgt_mesh = pv.wrap(connectivity_filter.GetOutput())
+        # self.tgt_mesh = pv.wrap(connectivity_filter.GetOutput())
 
-        # self.tgt_mesh = mesh.connectivity('largest')
+        self.tgt_mesh = mesh.connectivity('specified', range(n))
 
         if self.tgt_mesh is None:
             exit("Largest connectivity extraction failed")
@@ -510,15 +567,11 @@ class MainWindow(QMainWindow):
         self.rerender(self.tgt_mesh)
     
     def action_isolate(self):
-        if self.isolate_check.isChecked():
-            self.pclipped_mesh = self.tgt_mesh
+        self.last_mesh = self.tgt_mesh
 
-            self.clip_box(self.tgt_mesh)
+        self.clip_box(self.tgt_mesh)
 
-            self.rerender(self.tgt_mesh)
-        else:
-            self.rerender(self.pclipped_mesh)
-            self.tgt_mesh = self.pclipped_mesh
+        self.rerender(self.tgt_mesh)
     
     def action_show_ref(self):
         if self.ref_actor is not None:
@@ -539,9 +592,15 @@ class MainWindow(QMainWindow):
         self.bsize_val_change()
     
     def action_get_largest(self):
-        self.find_largest()
+        self.last_mesh = self.tgt_mesh
 
-        self.rerender(self.tgt_mesh)
+        text, ok = QInputDialog().getText(self, "Find largest components", 
+                                          "How many components?")
+
+        if ok and text:
+            self.find_largest(self.tgt_mesh, int(text))
+
+            self.rerender(self.tgt_mesh)
     
     def action_upload_target(self):
         dialog = QFileDialog(self, caption="Upload target mesh",
@@ -563,9 +622,20 @@ class MainWindow(QMainWindow):
 
             self.reset_mesh = self.tgt_mesh
 
-            self.pclipped_mesh = self.tgt_mesh
+            self.last_mesh = self.tgt_mesh
 
             self.rerender(self.tgt_mesh)
+    
+    def action_undo(self):
+        self.tgt_mesh = self.last_mesh
+
+        self.rerender(self.tgt_mesh)
+    
+    def action_save(self):
+        file_name, _ = QFileDialog.getSaveFileName(self, "Save Mesh", "", "OBJ file (*.obj)")
+        
+        if file_name:
+            pv.save_meshio(file_name, self.tgt_mesh, file_format="obj")
     
     def set_ref_mesh(self, i):
         self.ref_mesh = self.ref_mesh_arr[i]
@@ -601,6 +671,8 @@ class MainWindow(QMainWindow):
 
     def remove_furthest(self):
         mesh = self.get_mesh(self.tgt_mesh)
+
+        self.last_mesh = mesh
 
         distances = mesh.compute_implicit_distance(self.ref_mesh)
 
@@ -639,9 +711,9 @@ class MainWindow(QMainWindow):
         icp.SetSource(self.ref_mesh)
         icp.SetTarget(self.tgt_mesh)
         # icp.GetLandmarkTransform().SetModeToRigidBody()
-        icp.SetMaximumNumberOfLandmarks(100)
-        icp.SetMaximumMeanDistance(.00001)
-        icp.SetMaximumNumberOfIterations(1500)
+        icp.SetMaximumNumberOfLandmarks(1000)
+        # icp.SetMaximumMeanDistance(.00001)
+        icp.SetMaximumNumberOfIterations(1000)
         # icp.CheckMeanDistanceOn()
         # icp.StartByMatchingCentroidsOn()
         icp.Update()
