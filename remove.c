@@ -91,14 +91,40 @@ double vec_dist(const double *v1, const double *v2) {
 }
 
 void pt_cpy(pt_t *pt_dest, pt_t *pt_src) {
-    memcpy(pt_dest->data, pt_src->data, DIM);
+    int len = DIM * sizeof(double);
+    pt_dest->data = malloc(len);
+    memcpy(pt_dest->data, pt_src->data, len);
     pt_dest->seg_i = pt_src->seg_i;
 }
 
 void path_cpy(path_t *path_dest, path_t *path_src) {
-    memcpy(path_dest->points, path_src->points, path_src->dlen);
+    int len = path_src->dlen * sizeof(int);
+    path_dest->points = malloc(len);
+    memcpy(path_dest->points, path_src->points, len);
     path_dest->dlen = path_src->dlen;
     path_dest->plen = path_src->plen;
+}
+
+void free_paths(path_t *path, int n) {
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < path->dlen; j++) {
+            free(&path[i].points[j]);
+        }
+    }
+    free(path);
+}
+
+void free_points(pt_t *point, int n) {
+    for (int i = 0; i < n; i++) {
+        free(&point[i].data);
+    }
+    free(point);
+}
+
+void free_segmented(seg_t *seg) {
+    free_paths(seg->paths, seg->n_seg);
+    free_points(seg->points, seg->rsize);
+    free(seg);
 }
 
 double get_nearest_score(double average_dist, double path_len) {
@@ -335,10 +361,12 @@ void nearest_neighbors(const seg_t* ref, seg_t *tgt) {
 
     dbg_printf("SET PATHS\n");
 
-    seg_t* new_seg = (seg_t *)malloc(sizeof(seg_t));
+    seg_t* new_seg = (seg_t *)calloc(1, sizeof(seg_t));
 
     // allocate path space for the number of paths in the reference
     new_seg->paths = (path_t *)malloc(ref->n_seg * sizeof(path_t));
+
+    dbg_printf("n_seg: %d\n", ref->n_seg);
 
     new_seg->n_seg = ref->n_seg;
 
@@ -352,16 +380,26 @@ void nearest_neighbors(const seg_t* ref, seg_t *tgt) {
 
         path_cpy(&new_seg->paths[path_ind], &tgt->paths[i]);
 
+        // print_arr(tgt->paths[path_ind].points, tgt->paths[path_ind].dlen);
+
         path_ind++;
     }
 
-    dbg_printf("n_seg: %d\n", new_seg->n_seg);
-    print_arr(new_seg->paths[0].points, new_seg->paths[0].dlen);
+    // dbg_printf("n_seg: %d\n", new_seg->n_seg);
+    // print_arr(new_seg->paths[0].points, new_seg->paths[0].dlen);
+
+    // dbg_printf("points: %d\n", new_seg->points);
 
     dbg_printf("SET POINTS\n");
 
+    print_seg(new_seg);
+
     // allocate space for only the total number of points in all maximum paths
     new_seg->points = (pt_t *)malloc(psize * sizeof(pt_t));
+
+    new_seg->rsize = psize;
+
+    dbg_printf("memory allocated\n");
 
     int point_ind = 0;
 
@@ -370,16 +408,16 @@ void nearest_neighbors(const seg_t* ref, seg_t *tgt) {
         int proc_val = processed[tgt->points[i].seg_i];
         if (!proc_val)
             continue;
-        
+
         pt_cpy(&new_seg->points[point_ind], &tgt->points[i]);
         tgt->points[i].seg_i = proc_val-1;
     }
 
     dbg_printf("finished processing, freeing variables\n");
 
-    // free stale memory
-    free(tgt->paths);
-    free(tgt->points);
+    // free stale memory ! THIS IS AN ISSUE
+    // free_paths(tgt->paths, tgt->n_seg);
+    // free_points(tgt->points, tgt->rsize);
     // free(tgt);
 
     dbg_printf("data freed\n");
@@ -388,6 +426,8 @@ void nearest_neighbors(const seg_t* ref, seg_t *tgt) {
     tgt->points = new_seg->points;
     tgt->n_seg = new_seg->n_seg;
     tgt->rsize = new_seg->rsize;
+
+    print_seg(tgt);
 
     dbg_printf("data set, exiting\n");
 }

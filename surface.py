@@ -3,15 +3,21 @@ import pyvista as pv
 import numpy as np
 
 from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, \
-QSlider, QPushButton, QLabel, QAction, QHBoxLayout, QGridLayout, QCheckBox
+QSlider, QPushButton, QLabel, QAction, QHBoxLayout, QGridLayout, QCheckBox, \
+QFileDialog
 
 from PyQt5.QtCore import Qt
+
+from PyQt5.QtCore import QObject
 
 import pyvistaqt as pvqt
 
 from vtkmodules.vtkCommonDataModel import vtkIterativeClosestPointTransform
+from vtkmodules.vtkFiltersCore import vtkImplicitPolyDataDistance
 
 import vtk
+
+# from vmtk import pypes
 
 FILENAME = "./data/topcow_mr_001_0000.nii.gz"
 
@@ -35,6 +41,8 @@ class MainWindow(QMainWindow):
         page_layout = QVBoxLayout()
 
         slider_layout = QHBoxLayout()
+        bsize_layout = QHBoxLayout()
+        id_layout = QHBoxLayout()
         subpage_layout = QHBoxLayout()
 
         sidebar_layout = QVBoxLayout()
@@ -47,6 +55,8 @@ class MainWindow(QMainWindow):
         subpage_layout.addLayout(mesh_layout)
 
         page_layout.addLayout(slider_layout)
+        page_layout.addLayout(bsize_layout)
+        page_layout.addLayout(id_layout)
         page_layout.addLayout(subpage_layout)
 
         # central_widget = QWidget()
@@ -65,12 +75,43 @@ class MainWindow(QMainWindow):
 
         self.ref_mesh = mesh.threshold(1)
 
+        geo_filter = vtk.vtkGeometryFilter()
+        geo_filter.SetInputData(self.ref_mesh)
+        geo_filter.Update()
+
+        poly_data = geo_filter.GetOutput()
+
+        smooth_filter = vtk.vtkSmoothPolyDataFilter()
+        smooth_filter.SetInputData(poly_data)
+        smooth_filter.SetNumberOfIterations(30)
+        smooth_filter.SetRelaxationFactor(0.1)
+        smooth_filter.FeatureEdgeSmoothingOff()
+        smooth_filter.BoundarySmoothingOn()  
+        smooth_filter.Update()
+
+        self.ref_mesh = pv.wrap(smooth_filter.GetOutput())
+
         # Read target mesh
 
-        reader = pv.get_reader(FILENAME)
-        self.tgt_mesh = reader.read()
+        self.tgt_mesh = None
 
-        self.alpha_mesh = reader.read()
+        self.tgt_actor = None
+
+        self.ref_actor = None
+
+        self.alpha_mesh = None
+
+        self.reset_mesh = None
+
+        self.pclipped_mesh = None
+
+        self.box_actor = None
+
+        self.box_mesh = None
+
+        self.ref_mesh_arr = []
+
+        self.ref_mesh_arr.append(self.ref_mesh)
 
         # REMOVE
         # source = mesh.threshold(1)
@@ -90,11 +131,7 @@ class MainWindow(QMainWindow):
             self.ref_bounds = self.ref_mesh.bounds
 
         # -2.1e4
-        self.threshold(DEFAULT_THRESHOLD * -1e4)
-
         self.threshold_val = DEFAULT_THRESHOLD * 10
-
-        self.reset_mesh = self.tgt_mesh
 
         # resolution = (1000, 1000, 1000)
 
@@ -108,21 +145,6 @@ class MainWindow(QMainWindow):
 
         # if reference is None:
         #     exit("Could not construct reference mesh")
-
-        #     vtk.vtkUnstructuredGridTo
-
-        # geo_filter = vtk.vtkGeometryFilter()
-        # geo_filter.SetInputData(source)
-        # geo_filter.Update()
-
-        # poly_data = geo_filter.GetOutput()
-
-        # writer = vtk.vtkXMLPolyDataWriter()
-        # writer.SetFileName("artery.vtp")
-        # writer.SetInputData(poly_data)
-        # writer.Write()
-
-        # myPype= pypes.PypeRun("vmtknetworkextraction -ifile ArteryObjAN129–10.vtp -advancementratio 1 -ofile centerlines/ArteryObjAN129–10.vtp")
 
         # bounds = source.bounds
 
@@ -185,9 +207,13 @@ class MainWindow(QMainWindow):
         main_menu = self.menuBar()
 
         file_menu = None
+        edit_menu = None
+        view_menu = None
 
         if main_menu is not None:
-            file_menu = main_menu.addMenu("Edit")
+            file_menu = main_menu.addMenu("File")
+            edit_menu = main_menu.addMenu("Edit")
+            view_menu = main_menu.addMenu("View")
 
         clear_btn = QAction("Reset values", self)
         clear_btn.setShortcut("Ctrl+R")
@@ -201,10 +227,31 @@ class MainWindow(QMainWindow):
         ref_btn.setShortcut("Ctrl+S")
         ref_btn.triggered.connect(self.action_show_ref)
 
+        upload_btn = QAction("Upload target scan", self)
+        upload_btn.setShortcut("Ctrl+Q")
+        upload_btn.triggered.connect(self.action_upload_target)
+
+        refup_btn = QAction("Upload reference mesh", self)
+        refup_btn.setShortcut("Ctrl+W")
+        refup_btn.triggered.connect(self.action_upload_ref)
+
+        ref1_btn = QAction("Switch to ref 1", self)
+        ref1_btn.setShortcut("Ctrl+1")
+        ref1_btn.triggered.connect(lambda _: self.set_ref_mesh(1))
+
+        if edit_menu is not None:
+            edit_menu.addAction(clear_btn)
+            edit_menu.addAction(isolate_btn)
+            edit_menu.addAction(ref_btn)
+        
         if file_menu is not None:
-            file_menu.addAction(clear_btn)
-            file_menu.addAction(isolate_btn)
-            file_menu.addAction(ref_btn)
+            file_menu.addAction(upload_btn)
+            file_menu.addAction(refup_btn)
+
+        if view_menu is not None:
+            view_menu.addAction(ref1_btn)
+        
+        self.view_menu = view_menu
 
 
         # Widgets
@@ -226,19 +273,82 @@ class MainWindow(QMainWindow):
 
         slider_layout.addWidget(self.t_slider)
 
-        self.threshold_label = QLabel("* -1e4", self)
+        self.threshold_label = QLabel(f"{DEFAULT_THRESHOLD} * -1e4", self)
 
         slider_layout.addWidget(self.threshold_label)
 
-        self.submit_button = QPushButton("Submit")
-        self.submit_button.clicked.connect(self.submit)
+        b_label = QLabel("Localization box size: ", self)
 
-        sidebar_layout.addWidget(self.submit_button)
+        bsize_layout.addWidget(b_label)
+
+        self.bsize = 0
+
+        self.bshow = False
+
+        b_slider = QSlider(Qt.Orientation.Horizontal, self)
+        b_slider.setRange(0, 50)
+        b_slider.setValue(self.bsize)
+        b_slider.setSingleStep(1)
+        b_slider.setPageStep(5)
+        b_slider.setTickPosition(QSlider.TickPosition.TicksAbove)
+        b_slider.valueChanged.connect(self.update_bsize_val)
+        b_slider.sliderReleased.connect(self.bsize_val_change)
+
+        bsize_layout.addWidget(b_slider)
+
+        self.bsize_text = QLabel("+0x", self)
+
+        bsize_layout.addWidget(self.bsize_text)
+
+        i_label = QLabel("Identification distance: ", self)
+
+        id_layout.addWidget(i_label)
+
+        self.id_distance = 4
+
+        i_slider = QSlider(Qt.Orientation.Horizontal, self)
+        i_slider.setRange(0, 500)
+        i_slider.setValue(int(self.id_distance * 10))
+        i_slider.setSingleStep(10)
+        i_slider.setPageStep(20)
+        i_slider.setTickPosition(QSlider.TickPosition.TicksAbove)
+        i_slider.valueChanged.connect(self.update_id_val)
+
+        id_layout.addWidget(i_slider)
+
+        self.id_text = QLabel(f"{self.id_distance}px", self)
+
+        id_layout.addWidget(self.id_text)
+
+        self.upload_btn = QPushButton("Upload scan")
+        self.upload_btn.clicked.connect(self.action_upload_target)
+
+        sidebar_layout.addWidget(self.upload_btn)
+
+        self.submit_btn = QPushButton("Submit")
+        self.submit_btn.clicked.connect(self.submit)
+
+        sidebar_layout.addWidget(self.submit_btn)
+
+        self.largest_btn = QPushButton("Largest component")
+        self.largest_btn.clicked.connect(self.action_get_largest)
+
+        sidebar_layout.addWidget(self.largest_btn)
 
         self.align_btn = QPushButton("Align")
         self.align_btn.clicked.connect(self.align)
 
         sidebar_layout.addWidget(self.align_btn)
+
+        self.remove_btn = QPushButton("Remove furthest")
+        self.remove_btn.clicked.connect(self.remove_furthest)
+
+        sidebar_layout.addWidget(self.remove_btn)
+
+        self.contour_btn = QPushButton("Smooth")
+        self.contour_btn.clicked.connect(self.contour)
+
+        sidebar_layout.addWidget(self.contour_btn)
 
         self.isolate_check = QCheckBox("Isolate CoW region")
         self.isolate_check.stateChanged.connect(self.action_isolate)
@@ -246,29 +356,28 @@ class MainWindow(QMainWindow):
         sidebar_layout.addWidget(self.isolate_check)
 
         self.ref_check = QCheckBox("Show reference CoW")
-        self.ref_check.setChecked(True)
+        self.ref_check.setChecked(False)
         self.ref_check.stateChanged.connect(self.action_show_ref)
 
         sidebar_layout.addWidget(self.ref_check)
 
+        self.iso_check = QCheckBox("Show isolation region")
+        self.iso_check.setChecked(False)
+        self.iso_check.stateChanged.connect(self.action_show_iso)
+
+        sidebar_layout.addWidget(self.iso_check)
+
 
         # Visualize meshes
 
-        box = pv.Box(self.ref_bounds)
-
         self.plotter: pv.Plotter = pvqt.QtInteractor(self) # type: ignore
 
-        self.tgt_actor = self.plotter.add_mesh(self.tgt_mesh, color='lightgray')
-
-        self.pclipped_mesh = None
-
-        self.ref_actor = self.plotter.add_mesh(self.ref_mesh, opacity=0.4,
-                                               color='purple')
-
-        if PLOT_BOX:
-            _ = self.plotter.add_mesh(box, opacity=0.6)
+        # self.tgt_actor = self.plotter.add_mesh(self.tgt_mesh, color='lightgray')
 
         # plotter.add_mesh_threshold(mesh, pointa=(-2e4,1), pointb=(0,1))
+
+        # self.ref_actor = self.plotter.add_mesh(self.ref_mesh, opacity=0.4,
+        #                                            color='purple')
 
         self.plotter.camera_position = 'xy'
 
@@ -293,6 +402,38 @@ class MainWindow(QMainWindow):
         
         self.rerender(self.tgt_mesh)
     
+    def update_bsize_val(self, value):
+        self.bsize = value / 50
+        self.bsize_text.setText(f"+{self.bsize}x")
+    
+    def update_id_val(self, value):
+        self.id_distance = value / 10
+        self.id_text.setText(f"+{self.id_distance}px")
+    
+    def bsize_val_change(self):
+        self.box_mesh = pv.Box(self.get_bsize())
+        
+        if self.box_actor is not None:
+            self.plotter.remove_actor(self.box_actor)
+        
+        if self.bshow:
+            self.box_actor = self.plotter.add_mesh(self.box_mesh, opacity=0.2, 
+                                                color='lightgreen')
+
+        self.plotter.show()
+    
+    def get_bsize(self):
+        b = self.ref_bounds
+
+        if b is None:
+            return (0, 0, 0, 0, 0, 0)
+        
+        dx = self.bsize*abs(b[1] - b[0])
+        dy = self.bsize*abs(b[3] - b[2])
+        dz = self.bsize*abs(b[5] - b[4])
+
+        return (b[0]-dx, b[1]+dx, b[2]-dy, b[3]+dy, b[4]-dz, b[5]+dz)
+    
     def threshold(self, val, mesh=None):
         mesh = self.get_mesh(mesh)
 
@@ -303,9 +444,10 @@ class MainWindow(QMainWindow):
     
     def clip_box(self, mesh=None):
         mesh = self.get_mesh(mesh)
+        
+        nb = self.get_bsize()
 
-        self.tgt_mesh = mesh.clip_box(self.ref_bounds, invert=False,
-                                      progress_bar=True)
+        self.tgt_mesh = mesh.clip_box(nb, invert=False)
     
         if self.tgt_mesh is None:
             exit("Target mesh could not be clipped")
@@ -313,7 +455,20 @@ class MainWindow(QMainWindow):
     def find_largest(self, mesh=None):
         mesh = self.get_mesh(mesh)
 
-        self.tgt_mesh = mesh.connectivity('largest', progress_bar=True)
+        # geo_filter = vtk.vtkGeometryFilter()
+        # geo_filter.SetInputData(mesh)
+        # geo_filter.Update()
+
+        # data = geo_filter.GetOutput()
+
+        connectivity_filter = vtk.vtkConnectivityFilter()
+        connectivity_filter.SetInputData(mesh)
+        connectivity_filter.SetExtractionModeToLargestRegion()
+        connectivity_filter.Update()
+
+        self.tgt_mesh = pv.wrap(connectivity_filter.GetOutput())
+
+        # self.tgt_mesh = mesh.connectivity('largest')
 
         if self.tgt_mesh is None:
             exit("Largest connectivity extraction failed")
@@ -326,14 +481,23 @@ class MainWindow(QMainWindow):
         
         return mesh
     
-    def rerender(self, mesh=None):
+    def rerender(self, mesh=None, ref=False):
         mesh = self.get_mesh(mesh)
         
-        self.plotter.remove_actor(self.tgt_actor)
+        if ref:
+            if self.ref_actor:
+                self.plotter.remove_actor(self.ref_actor)
+            
+            self.ref_actor = self.plotter.add_mesh(mesh, color='purple',
+                                                   opacity=0.4)
+        else:
+            if self.tgt_actor:
+                self.plotter.remove_actor(self.tgt_actor)
 
-        self.tgt_actor = self.plotter.add_mesh(mesh,
-                                               color='lightgray')
-        
+            self.tgt_actor = self.plotter.add_mesh(mesh, color='lightgray')
+
+        self.plotter.set_focus(mesh.center)
+
         self.plotter.show()
     
     def action_reset(self):
@@ -368,27 +532,149 @@ class MainWindow(QMainWindow):
                                                    color='purple')
 
             self.plotter.show()
-    
-    def align(self):
-        icp = vtkIterativeClosestPointTransform()
-        icp.SetSource(self.tgt_mesh)
-        icp.SetTarget(self.ref_mesh)
-        icp.GetLandmarkTransform().SetModeToRigidBody()
-        icp.SetMaximumNumberOfLandmarks(100)
-        icp.SetMaximumMeanDistance(.00001)
-        icp.SetMaximumNumberOfIterations(500)
-        icp.CheckMeanDistanceOn()
-        icp.StartByMatchingCentroidsOn()
-        icp.Update()
 
-        self.tgt_mesh = self.tgt_mesh.transform(icp.GetMatrix())
+    def action_show_iso(self):
+        self.bshow = not self.bshow
+
+        self.bsize_val_change()
+    
+    def action_get_largest(self):
+        self.find_largest()
 
         self.rerender(self.tgt_mesh)
+    
+    def action_upload_target(self):
+        dialog = QFileDialog(self, caption="Upload target mesh",
+                                filter="Scans (*.nii, *.nii.gz)")
+        dialog.setFileMode(QFileDialog.FileMode.ExistingFiles)
+        dialog.setViewMode(QFileDialog.ViewMode.List)
+        
+        if dialog.exec():
+            filenames = dialog.selectedFiles()
+
+            print(filenames[0])
+
+            reader = pv.get_reader(filenames[0])
+            self.tgt_mesh = reader.read()
+
+            self.alpha_mesh = reader.read()
+
+            self.threshold(DEFAULT_THRESHOLD * -1e4)
+
+            self.reset_mesh = self.tgt_mesh
+
+            self.pclipped_mesh = self.tgt_mesh
+
+            self.rerender(self.tgt_mesh)
+    
+    def set_ref_mesh(self, i):
+        self.ref_mesh = self.ref_mesh_arr[i]
+
+        self.rerender(self.ref_mesh, ref=True)
+    
+    def action_upload_ref(self):
+        dialog = QFileDialog(self, caption="Upload target mesh",
+                                filter="Scans (*.nii, *.nii.gz)")
+        dialog.setFileMode(QFileDialog.FileMode.ExistingFiles)
+        dialog.setViewMode(QFileDialog.ViewMode.List)
+
+        if dialog.exec():
+            filenames = dialog.selectedFiles()
+
+            reader = pv.get_reader(filenames[0])
+            mesh = reader.read()
+
+            mesh = mesh.threshold(1)
+
+            self.ref_mesh_arr.append(mesh)
+
+            self.ref_mesh = mesh
+
+            size = len(self.ref_mesh_arr)
+
+            ref_btn = QAction(f"Switch to ref {size}", self)
+            ref_btn.setShortcut(f"Ctrl+{size}")
+            ref_btn.triggered.connect(lambda _: self.set_ref_mesh(size-1))
+
+            if self.view_menu is not None:
+                self.view_menu.addAction(ref_btn)
+
+    def remove_furthest(self):
+        mesh = self.get_mesh(self.tgt_mesh)
+
+        distances = mesh.compute_implicit_distance(self.ref_mesh)
+
+        mesh['distance'] = distances['implicit_distance']
+
+        self.tgt_mesh = mesh.threshold(
+            [-self.id_distance, self.id_distance],
+            scalars='distance'
+        )
+
+        self.rerender(self.tgt_mesh)
+
+    def contour(self):
+        mesh = self.get_mesh(self.tgt_mesh)
+
+        geo_filter = vtk.vtkGeometryFilter()
+        geo_filter.SetInputData(mesh)
+        geo_filter.Update()
+
+        poly_data = geo_filter.GetOutput()
+
+        smooth_filter = vtk.vtkSmoothPolyDataFilter()
+        smooth_filter.SetInputData(poly_data)
+        smooth_filter.SetNumberOfIterations(30)
+        smooth_filter.SetRelaxationFactor(0.1)
+        smooth_filter.FeatureEdgeSmoothingOff()
+        smooth_filter.BoundarySmoothingOn()  
+        smooth_filter.Update()
+
+        self.tgt_mesh = pv.wrap(smooth_filter.GetOutput())
+
+        self.rerender(self.tgt_mesh)
+
+    def align(self):
+        icp = vtkIterativeClosestPointTransform()
+        icp.SetSource(self.ref_mesh)
+        icp.SetTarget(self.tgt_mesh)
+        # icp.GetLandmarkTransform().SetModeToRigidBody()
+        icp.SetMaximumNumberOfLandmarks(100)
+        icp.SetMaximumMeanDistance(.00001)
+        icp.SetMaximumNumberOfIterations(1500)
+        # icp.CheckMeanDistanceOn()
+        # icp.StartByMatchingCentroidsOn()
+        icp.Update()
+
+        self.ref_mesh = self.ref_mesh.transform(icp.GetMatrix())
+
+        self.rerender(self.ref_mesh, ref=True)
 
     def submit(self):
         self.threshold(self.threshold_val * -1e4)
         self.clip_box(self.tgt_mesh)
         self.find_largest(self.tgt_mesh)
+
+        # geo_filter = vtk.vtkGeometryFilter()
+        # geo_filter.SetInputData(self.tgt_mesh)
+        # geo_filter.Update()
+
+        # poly_data = geo_filter.GetOutput()
+
+        # writer = vtk.vtkXMLPolyDataWriter()
+        # writer.SetFileName("artery.vtp")
+        # writer.SetInputData(poly_data)
+        # writer.Write()
+
+        # my_pype = pypes.PypeRun("vmtknetworkextraction -ifile artery.vtp -advancementratio 1 -ofile centerlines/artery.vtp")
+        
+        # reader = vtk.vtkOBJReader()
+        # reader.SetFileName("artery.vtp")
+        # reader.Update()
+        # data = reader.GetOutput()
+
+        # print(data)
+
         self.rerender(self.tgt_mesh)
 
 

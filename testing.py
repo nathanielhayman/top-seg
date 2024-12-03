@@ -18,7 +18,7 @@ verts = np.array([
     # anomaly
     [0.25, 0, 1],
     [0.5, 0, 2],
-    [0.25, 0, 3]
+    [0.25, 0, 3],
 ])
 
 ref_verts = np.array([
