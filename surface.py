@@ -6,6 +6,8 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, \
 QSlider, QPushButton, QLabel, QAction, QHBoxLayout, QGridLayout, QCheckBox, \
 QFileDialog, QInputDialog
 
+from PyQt5.QtGui import QIcon
+
 from PyQt5.QtCore import Qt
 
 from PyQt5.QtCore import QObject
@@ -35,8 +37,10 @@ class MainWindow(QMainWindow):
 
         # Initialize Qt window
 
-        self.setWindowTitle("Visualization")
+        self.setWindowTitle("TopSeg Visualization")
         # self.setGeometry(100, 100, 100, 100)
+
+        self.setWindowIcon(QIcon("icon.png"))
 
         page_layout = QVBoxLayout()
 
@@ -220,7 +224,7 @@ class MainWindow(QMainWindow):
         clear_btn.triggered.connect(self.action_reset)
 
         isolate_btn = QAction("Isolate CoW region", self)
-        isolate_btn.setShortcut("Ctrl+I")
+        isolate_btn.setShortcut("Ctrl+E")
         isolate_btn.triggered.connect(self.action_isolate)
 
         ref_btn = QAction("Show reference CoW", self)
@@ -245,23 +249,39 @@ class MainWindow(QMainWindow):
 
         ref1_btn = QAction("Switch to ref 1", self)
         ref1_btn.setShortcut("Ctrl+1")
-        ref1_btn.triggered.connect(lambda _: self.set_ref_mesh(1))
+        ref1_btn.triggered.connect(lambda _: self.set_ref_mesh(0))
 
         ba_btn = QAction("Expand region on all", self)
         ba_btn.setShortcut("Ctrl+H")
-        ba_btn.triggered.connect(lambda _: self.set_btype("all"))
+        ba_btn.triggered.connect(lambda _: self.set_btype("bsize", "all"))
 
         bx_btn = QAction("Expand region on X", self)
         bx_btn.setShortcut("Ctrl+J")
-        bx_btn.triggered.connect(lambda _: self.set_btype("x"))
+        bx_btn.triggered.connect(lambda _: self.set_btype("bsize", "x"))
 
         by_btn = QAction("Expand region on Y", self)
         by_btn.setShortcut("Ctrl+K")
-        by_btn.triggered.connect(lambda _: self.set_btype("y"))
+        by_btn.triggered.connect(lambda _: self.set_btype("bsize", "y"))
 
         bz_btn = QAction("Expand region on Z", self)
         bz_btn.setShortcut("Ctrl+L")
-        bz_btn.triggered.connect(lambda _: self.set_btype("z"))
+        bz_btn.triggered.connect(lambda _: self.set_btype("bsize", "z"))
+
+        px_btn = QAction("Shift region on X", self)
+        px_btn.setShortcut("Ctrl+U")
+        px_btn.triggered.connect(lambda _: self.set_btype("bpos", "x"))
+
+        py_btn = QAction("Shift region on Y", self)
+        py_btn.setShortcut("Ctrl+I")
+        py_btn.triggered.connect(lambda _: self.set_btype("bpos", "y"))
+
+        pz_btn = QAction("Shift region on Z", self)
+        pz_btn.setShortcut("Ctrl+O")
+        pz_btn.triggered.connect(lambda _: self.set_btype("bpos", "z"))
+
+        h_btn = QAction("Compute Hausdorff Distance", self)
+        h_btn.setShortcut("Ctrl+D")
+        h_btn.triggered.connect(lambda _: self.compute_hausdorff())
 
         if edit_menu is not None:
             edit_menu.addAction(clear_btn)
@@ -273,6 +293,10 @@ class MainWindow(QMainWindow):
             edit_menu.addAction(bx_btn)
             edit_menu.addAction(by_btn)
             edit_menu.addAction(bz_btn)
+            edit_menu.addSeparator()
+            edit_menu.addAction(px_btn)
+            edit_menu.addAction(py_btn)
+            edit_menu.addAction(pz_btn)
         
         if file_menu is not None:
             file_menu.addAction(upload_btn)
@@ -280,6 +304,7 @@ class MainWindow(QMainWindow):
             file_menu.addAction(save_btn)
 
         if view_menu is not None:
+            view_menu.addAction(h_btn)
             view_menu.addAction(ref1_btn)
         
         self.view_menu = view_menu
@@ -320,10 +345,18 @@ class MainWindow(QMainWindow):
             "z": 0
         }
 
+        self.bpos = {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        }
+        
+        self.bchange = "bsize"
+
         self.bshow = False
 
         b_slider = QSlider(Qt.Orientation.Horizontal, self)
-        b_slider.setRange(-20, 50)
+        b_slider.setRange(-50, 50)
         b_slider.setValue(self.bsize["x"])
         b_slider.setSingleStep(1)
         b_slider.setPageStep(5)
@@ -433,7 +466,7 @@ class MainWindow(QMainWindow):
         self.threshold_label.setText(f"{self.threshold_val} * -1e4")
     
     def threshold_change(self):
-        self.isolate_check.setChecked(False)
+        self.iso_check.setChecked(False)
         self.threshold((self.threshold_val) * -1e4)
 
         if self.tgt_mesh is None:
@@ -442,30 +475,40 @@ class MainWindow(QMainWindow):
         self.rerender(self.tgt_mesh)
     
     def update_bsize_val(self, value):
-        if self.b_type == "all":
-            self.bsize["x"] = value / 50
-            self.bsize["y"] = value / 50
-            self.bsize["z"] = value / 50
-            self.bsize_text.setText(f"+{self.bsize['x']}x")
-        else:
-            self.bsize[self.b_type] = value / 50
-            self.bsize_text.setText(f"+{self.bsize[self.b_type]}x")
+        if self.bchange == "bsize":
+            if self.b_type == "all":
+                self.bsize["x"] = value / 50
+                self.bsize["y"] = value / 50
+                self.bsize["z"] = value / 50
+                self.bsize_text.setText(f"+{self.bsize['x']}x")
+            else:
+                self.bsize[self.b_type] = value / 50
+                self.bsize_text.setText(f"+{self.bsize[self.b_type]}x")
+        elif self.bchange == "bpos":
+            self.bpos[self.b_type] = value / 5
+            self.bsize_text.setText(f"+{self.bpos[self.b_type]}x")
 
     def update_id_val(self, value):
         self.id_distance = value / 10
         self.id_text.setText(f"+{self.id_distance}px")
 
-    def set_btype(self, val="all"):
+    def set_btype(self, change="bsize", val="all"):
+        self.bchange = change
         self.b_type = val
 
         if val == "all":
             self.bsize["y"] = self.bsize["x"]
             self.bsize["z"] = self.bsize["x"]
 
-        self.b_slider.setValue(self.bsize[val] if val != "all" 
-                               else self.bsize["x"])
+        if change == "bsize":
+            self.b_slider.setValue(int(self.bsize[val] * 50 if val != "all" 
+                                else self.bsize["x"] * 50))
+        else:
+            self.b_slider.setValue(int(self.bpos[val] * 10))
 
-        self.b_label.setText(f"Isolation box expansion on {val}: ")
+        self.b_label.setText(
+            f"Isolation box {'expansion' if change == 'bsize' else 'shift'} on {val}: "
+        )
     
     def bsize_val_change(self):
         self.box_mesh = pv.Box(self.get_bsize())
@@ -489,7 +532,13 @@ class MainWindow(QMainWindow):
         dy = self.bsize["y"]*abs(b[3] - b[2])
         dz = self.bsize["z"]*abs(b[5] - b[4])
 
-        return (b[0]-dx, b[1]+dx, b[2]-dy, b[3]+dy, b[4]-dz, b[5]+dz)
+        px = self.bpos["x"]
+        py = self.bpos["y"]
+        pz = self.bpos["z"]
+
+        return (b[0]-dx+px, b[1]+dx+px, 
+                b[2]-dy+py, b[3]+dy+py, 
+                b[4]-dz+pz, b[5]+dz+pz)
     
     def threshold(self, val, mesh=None):
         mesh = self.get_mesh(mesh)
@@ -560,7 +609,7 @@ class MainWindow(QMainWindow):
     def action_reset(self):
         self.threshold_label.setText(f"{DEFAULT_THRESHOLD} * -1e4")
         self.t_slider.setValue(int(DEFAULT_THRESHOLD * 10))
-        self.isolate_check.setChecked(False)
+        self.iso_check.setChecked(False)
 
         self.tgt_mesh = self.reset_mesh
 
@@ -721,11 +770,23 @@ class MainWindow(QMainWindow):
         self.ref_mesh = self.ref_mesh.transform(icp.GetMatrix())
 
         self.rerender(self.ref_mesh, ref=True)
+    
+    def compute_hausdorff(self):
+        hausdorff_filter = vtk.vtkHausdorffDistancePointSetFilter()
+        hausdorff_filter.SetInputData(0, self.tgt_mesh)
+        hausdorff_filter.SetInputData(1, self.ref_mesh)
+        hausdorff_filter.Update()
+
+        hd = hausdorff_filter.GetOutput().GetFieldData().GetArray(0).GetValue(0)
+
+        print(f"Hausdorff distance: {hd}")
 
     def submit(self):
         self.threshold(self.threshold_val * -1e4)
         self.clip_box(self.tgt_mesh)
         self.find_largest(self.tgt_mesh)
+        self.align()
+        self.remove_furthest()
 
         # geo_filter = vtk.vtkGeometryFilter()
         # geo_filter.SetInputData(self.tgt_mesh)
